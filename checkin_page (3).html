@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Location Check-in</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: linear-gradient(160deg, #0f172a, #1e293b);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .panel {
+    background: #ffffff;
+    border-radius: 16px;
+    max-width: 400px;
+    width: 100%;
+    padding: 32px 28px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+  }
+  .icon-badge {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    background: #16a34a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    margin-bottom: 18px;
+  }
+  h1 { font-size: 19px; color: #0f172a; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #64748b; margin-bottom: 20px; line-height: 1.5; }
+  .info-line {
+    font-size: 12.5px;
+    color: #475569;
+    background: #f1f5f9;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .info-line span:last-child { font-weight: 600; color: #0f172a; }
+  button#go {
+    width: 100%;
+    margin-top: 18px;
+    padding: 14px;
+    background: #16a34a;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button#go:disabled { opacity: 0.5; cursor: default; }
+  button#go:hover:not(:disabled) { background: #15803d; }
+  #result {
+    margin-top: 16px;
+    font-size: 13px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    display: none;
+    line-height: 1.5;
+  }
+  #result.ok { background: #dcfce7; color: #166534; display: block; }
+  #result.bad { background: #fee2e2; color: #991b1b; display: block; }
+  #result.wait { background: #dbeafe; color: #1d4ed8; display: block; }
+  .fine-print { margin-top: 18px; font-size: 10.5px; color: #94a3b8; text-align: center; line-height: 1.5; }
+</style>
+</head>
+<body>
+  <div class="panel">
+    <div class="icon-badge">📍</div>
+    <h1 id="heading">Confirm Your Location</h1>
+    <p class="subtitle">
+      Tap the button below to share your current location. Your browser will
+      ask for permission first — nothing is sent unless you approve it.
+    </p>
+
+    <div class="info-line"><span>Name</span><span id="nameOut">—</span></div>
+    <div class="info-line"><span>Reference</span><span id="refOut">—</span></div>
+    <div class="info-line"><span>Requested on</span><span id="dateOut">—</span></div>
+
+    <button id="go">Share My Location</button>
+    <div id="result"></div>
+
+    <p class="fine-print">Used only to confirm your location for this order/check-in.</p>
+  </div>
+
+<script>
+(function () {
+  // ── DEFAULT ENDPOINT / REFERENCE (used if link has no ?ref=) ────
+  var ENDPOINT = "https://script.google.com/macros/s/AKfycbydrzqgWYxwHhSnEwDRLAveJcknea6RKhjiSxzZsjnPEuxunnQW5DCK0yVGkUT5N5JO/exec";
+  var DEFAULT_REF = "REF-0001";
+  // ─────────────────────────────────────────────────────────────────
+
+  // Personalized links look like: checkin_page.html?name=Priya&ref=TEAM-A
+  var params = new URLSearchParams(window.location.search);
+  var NAME   = params.get("name") || "";
+  var REF_ID = params.get("ref") || DEFAULT_REF;
+
+  document.getElementById("nameOut").textContent = NAME || "—";
+  document.getElementById("refOut").textContent = REF_ID;
+  document.getElementById("dateOut").textContent = new Date().toLocaleDateString();
+  if (NAME) {
+    document.getElementById("heading").textContent = "Hi " + NAME + ", confirm your location";
+  }
+
+  var btn = document.getElementById("go");
+  var box = document.getElementById("result");
+
+  function show(kind, html) {
+    box.className = kind;
+    box.innerHTML = html;
+  }
+
+  btn.addEventListener("click", function () {
+    if (!("geolocation" in navigator)) {
+      show("bad", "Location isn't supported in this browser.");
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = "Waiting for permission…";
+    show("wait", "Please choose <b>Allow</b> on the browser prompt.");
+
+    navigator.geolocation.getCurrentPosition(
+      function (pos) {
+        var lat = pos.coords.latitude.toFixed(6);
+        var lng = pos.coords.longitude.toFixed(6);
+        var acc = Math.round(pos.coords.accuracy);
+        var now = new Date().toISOString();
+
+        show("wait", "Got it — sending…");
+
+        fetch(ENDPOINT, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "text/plain" },
+          body: JSON.stringify({ ts: now, name: NAME, lat: lat, lng: lng, acc: acc, ref: REF_ID })
+        }).then(function () {
+          btn.textContent = "Shared ✓";
+          show("ok",
+            "Thanks — your location was sent.<br>" +
+            "<code>" + lat + ", " + lng + "</code> (±" + acc + "m)<br>" +
+            "<a target='_blank' href='https://maps.google.com/?q=" + lat + "," + lng + "'>View on map</a>"
+          );
+        }).catch(function () {
+          btn.disabled = false;
+          btn.textContent = "Try again";
+          show("bad", "Couldn't send it — check your connection and retry.");
+        });
+      },
+      function (err) {
+        btn.disabled = false;
+        btn.textContent = "Share My Location";
+        var m = {1:"Permission denied.", 2:"Position unavailable.", 3:"Timed out."};
+        show("bad", m[err.code] || "Something went wrong. Try again.");
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  });
+})();
+</script>
+</body>
+</html>
